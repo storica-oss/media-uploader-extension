@@ -5,32 +5,32 @@ import './style.css'
 document.querySelector('#settings-app').innerHTML = `
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
   <header class="topbar"><a class="brand" href="https://storica.my" target="_blank" rel="noreferrer"><img src="./storica-mark.svg" alt="Storica"/><span>STORICA</span><small>IC OSS</small></a><span class="eyebrow">EXTENSION SETTINGS</span></header>
-  <main class="settings-shell"><section class="settings-hero"><span class="eyebrow">MEDIA UPLOADER / CONFIG</span><h1>连接你的<br><em>个人云。</em></h1><p>扩展通过 Personal Hub API Key 写入你的 Public Bucket。Key 只会保存在浏览器扩展的本地存储中。</p></section>
+  <main class="settings-shell"><section class="settings-hero"><span class="eyebrow">MEDIA UPLOADER / CONFIG</span><h1>绑定你的<br><em>链上 Bucket。</em></h1><p>扩展直接使用 IC OSS 的委托 access token 写入 Bucket，不经过 Personal Hub。Token 只会保存在浏览器扩展的本地存储中。</p></section>
   <form id="settings-form" class="settings-card">
-    <label><span>Personal Hub 地址或 Canister ID</span><small>支持 aaaaa-aa，或包含 canisterId 参数的自定义域名</small><input id="hub" required placeholder="aaaaa-aa 或 https://…?canisterId=…"></label>
-    <label><span>API Key</span><small>建议使用可撤销、有限期的 <code>phk_…</code> Key</small><input id="api-key" type="password" required placeholder="phk_…"></label>
+    <label><span>IC OSS Bucket Canister ID</span><small>填写 Bucket 的 Canister ID，也支持包含 canisterId 参数的自定义域名</small><input id="bucket" required placeholder="aaaaa-aa 或 https://…?canisterId=…"></label>
+    <label><span>IC OSS access token</span><small>粘贴 COSE 委托 token，支持 base64:…、base64url 或 hex:… 格式</small><textarea id="access-token" rows="4" required placeholder="base64:…"></textarea></label>
     <div class="settings-actions"><button id="test" type="button" class="quiet-button">测试连接</button><button type="submit" class="primary-button">保存连接 ↗</button></div>
     <div id="settings-status" class="settings-status">尚未保存连接</div>
   </form>
-  <section class="security-note"><span>◎</span><div><strong>安全提醒</strong><p>API Key 不会注入网页，也不会上传到第三方服务。拥有此 Key 的人可以代表你创建 Public 内容，请在 Personal Hub 管理中心为它设置合适的有效期。</p></div></section>
+  <section class="security-note"><span>◎</span><div><strong>安全提醒</strong><p>Token 不会注入网页，也不会上传到第三方服务。请给 token 设置精确的 Bucket audience、最小权限和较短有效期；失效或撤销后可随时在这里替换。</p></div></section>
   <button id="clear" class="danger-button">清除本机连接信息</button></main>
 `
 
-const hub = document.querySelector('#hub')
-const key = document.querySelector('#api-key')
+const bucket = document.querySelector('#bucket')
+const accessToken = document.querySelector('#access-token')
 const status = document.querySelector('#settings-status')
 const form = document.querySelector('#settings-form')
 const initial = await loadSettings()
-hub.value = initial.hub
-key.value = initial.apiKey
-if (isBound(initial)) showStatus(`已保存 · ${initial.hubLabel || initial.hub}`, 'success')
+bucket.value = initial.bucket
+accessToken.value = initial.accessToken
+if (isBound(initial)) showStatus(`已保存 · ${initial.bucketLabel || initial.bucket}`, 'success')
 
 document.querySelector('#test').addEventListener('click', async () => {
-  setBusy(true); showStatus('正在验证 API Key…', 'loading')
+  setBusy(true); showStatus('正在验证 Bucket 与 access token…', 'loading')
   try {
-    const client = await createClient(hub.value)
-    const galleries = await client.listGalleries(key.value)
-    showStatus(`连接成功 · 已发现 ${galleries.length} 个相册`, 'success')
+    const client = await createClient(bucket.value, accessToken.value)
+    const info = await client.getBucketInfo()
+    showStatus(`连接成功 · ${info.name || client.resolved.label}`, 'success')
   } catch (error) { showStatus(error.message || '连接失败', 'error') }
   finally { setBusy(false) }
 })
@@ -38,16 +38,16 @@ document.querySelector('#test').addEventListener('click', async () => {
 form.addEventListener('submit', async (event) => {
   event.preventDefault(); setBusy(true); showStatus('正在验证并保存…', 'loading')
   try {
-    const client = await createClient(hub.value)
-    const galleries = await client.listGalleries(key.value)
-    await saveSettings({ hub: hub.value, apiKey: key.value, hubLabel: client.resolved.label, connectedAt: new Date().toISOString() })
-    showStatus(`已连接 · ${galleries.length} 个相册可用`, 'success')
+    const client = await createClient(bucket.value, accessToken.value)
+    const info = await client.getBucketInfo()
+    await saveSettings({ bucket: bucket.value, accessToken: accessToken.value, bucketLabel: info.name || client.resolved.label, connectedAt: new Date().toISOString() })
+    showStatus(`已连接 · ${info.name || client.resolved.label}`, 'success')
   } catch (error) { showStatus(error.message || '保存失败', 'error') }
   finally { setBusy(false) }
 })
 
 document.querySelector('#clear').addEventListener('click', async () => {
-  await clearSettings(); hub.value = ''; key.value = ''; showStatus('本机连接信息已清除', 'success')
+  await clearSettings(); bucket.value = ''; accessToken.value = ''; showStatus('本机连接信息已清除', 'success')
 })
 
 function showStatus(message, state = '') { status.textContent = message; status.dataset.state = state }

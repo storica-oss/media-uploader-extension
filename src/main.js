@@ -31,9 +31,9 @@ app.innerHTML = `
       <small>JPEG · PNG · WebP · GIF · MP4</small>
     </section>
     <section class="link-card">
-      <div class="section-label"><span class="eyebrow">MEDIA UPLOADER / 02</span><span>REMOTE OR ARTICLE</span></div>
+      <div class="section-label"><span class="eyebrow">MEDIA UPLOADER / 02</span><span>REMOTE OR LINK FILE</span></div>
       <div class="link-row"><input id="url-input" type="url" placeholder="粘贴图片、MP4 或网页链接…"><button id="add-current" class="quiet-button" title="加入当前标签页">当前页</button><button id="add-link" class="primary-button">加入队列</button></div>
-      <p class="hint">媒体链接会自动抓取原文件；普通链接会保存为一篇公开文章。也可以直接粘贴截图。</p>
+      <p class="hint">媒体链接会自动抓取原文件；普通链接会保存为一个 .url.txt 文件。也可以直接粘贴截图。</p>
     </section>
     <section class="queue-section">
       <div class="section-heading"><div><span class="eyebrow">MEDIA UPLOADER / 03</span><h2>上传队列 <span id="queue-count">0</span></h2></div><button id="clear-queue" class="quiet-button">清空</button></div>
@@ -41,7 +41,7 @@ app.innerHTML = `
     </section>
     <section class="action-bar"><div><strong id="queue-summary">准备就绪</strong><small id="status">尚未开始上传</small></div><div class="action-buttons"><button id="cancel-upload" class="quiet-button" hidden>停止</button><button id="start-upload" class="primary-button large">开始上传 <span>↗</span></button></div></section>
   </main>
-  <footer><span>上传到 Public Bucket · API Key 仅保存在本机</span><a id="open-dashboard" href="./uploader.html">打开完整上传器 ↗</a></footer>
+  <footer><span>直连 IC OSS Bucket · access token 仅保存在本机</span><a id="open-dashboard" href="./uploader.html">打开完整上传器 ↗</a></footer>
 `
 
 const els = {
@@ -174,7 +174,7 @@ function clearQueue() {
 async function refreshConnection() {
   settings = await loadSettings()
   const bound = isBound(settings)
-  els.connection.textContent = bound ? `● ${settings.hubLabel || settings.hub}` : '未连接'
+  els.connection.textContent = bound ? `● ${settings.bucketLabel || settings.bucket}` : '未连接'
   els.connection.dataset.state = bound ? 'connected' : 'idle'
   client = null
 }
@@ -182,27 +182,27 @@ async function refreshConnection() {
 async function processQueue() {
   if (currentAbort) return
   if (!queue.length || queue.every((item) => item.status === 'done')) return setStatus('队列中没有待上传内容')
-  if (!isBound(settings)) return setStatus('请先在设置中绑定 Personal Hub')
+  if (!isBound(settings)) return setStatus('请先在设置中绑定 IC OSS Bucket 与 access token')
   els.start.disabled = true
   els.cancel.hidden = false
   currentAbort = new AbortController()
   try {
-    client ||= await createClient(settings.hub)
+    client ||= await createClient(settings.bucket, settings.accessToken)
     for (const item of queue) {
       if (item.status === 'done') continue
       item.status = 'uploading'; item.progress = 0; schedulePersist(); render()
       try {
         let result
-        if (item.kind === 'file') result = await uploadFile({ client, token: settings.apiKey, file: item.file, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
-        else if (item.kind === 'image' || item.kind === 'video') result = await importRemoteMedia({ client, token: settings.apiKey, url: item.url, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        if (item.kind === 'file') result = await uploadFile({ client, file: item.file, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        else if (item.kind === 'image' || item.kind === 'video') result = await importRemoteMedia({ client, url: item.url, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
         else if (item.kind === 'auto') {
           try {
-            result = await importRemoteMedia({ client, token: settings.apiKey, url: item.url, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+            result = await importRemoteMedia({ client, url: item.url, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
           } catch (error) {
             if (!/不是支持的图片或 MP4/.test(error.message || '')) throw error
-            result = await saveLink({ client, token: settings.apiKey, url: item.url, title: item.title || item.label, signal: currentAbort.signal })
+            result = await saveLink({ client, url: item.url, title: item.title || item.label, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
           }
-        } else result = await saveLink({ client, token: settings.apiKey, url: item.url, title: item.title || item.label, signal: currentAbort.signal })
+        } else result = await saveLink({ client, url: item.url, title: item.title || item.label, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
         item.status = 'done'; item.progress = 100; item.result = result
       } catch (error) {
         if (currentAbort.signal.aborted) {
@@ -253,7 +253,7 @@ function render() {
 
 function renderItem(item) {
   const icon = item.kind === 'video' ? '▶' : item.kind === 'image' || item.kind === 'file' ? '▧' : '↗'
-  const resultId = item.result?.asset?.id ? `Asset #${item.result.asset.id}` : item.result?.id ? `Article #${item.result.id}` : ''
+  const resultId = item.result?.asset?.id ? `File #${item.result.asset.id}` : ''
   const status = item.status === 'done' ? `已完成${resultId ? ` · ${resultId}` : ''}` : item.status === 'error' ? item.error : item.status === 'uploading' ? `${item.phase || '上传中'} ${item.progress}%` : item.detail
   const visual = item.preview ? `<img class="item-preview" src="${escapeHtml(item.preview)}" alt="">` : `<div class="item-icon item-${item.kind}">${icon}</div>`
   const retryButton = item.status === 'error' ? `<button class="retry-button" data-retry="${item.id}">重试</button>` : ''

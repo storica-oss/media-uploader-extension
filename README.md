@@ -4,9 +4,9 @@ Standalone repository: <https://github.com/storica-oss/media-uploader-extension>
 
 一个 Manifest V3 浏览器扩展，把 `media_bot` 的媒体处理思路重构成一个轻量的 IC OSS 投递箱：
 
-- 拖拽或选择本地 JPEG、PNG、WebP、AVIF、GIF 和 MP4，使用 Personal Hub API Key 分片上传。
+- 拖拽或选择本地 JPEG、PNG、WebP、AVIF、GIF 和 MP4，使用 IC OSS access token 直接上传到 Bucket。
 - 粘贴远程图片或 MP4 地址，扩展会抓取原文件后上传。
-- 粘贴普通网页链接，保存为一篇公开的 Markdown Article，方便在 IC OSS 中继续整理。
+- 粘贴普通网页链接，保存为一个 `.url.txt` 文件，和其他素材一样进入 IC OSS。
 - 支持右键菜单：在图片、视频、链接或页面上选择 `Save to IC OSS`，直接打开完整上传器。
 - 支持点击投递区选文件、粘贴剪贴板截图/文件、粘贴未知后缀的媒体地址，以及将当前标签页一键加入队列。
 - 队列中的图片显示缩略图；`Ctrl/Cmd + Enter` 可直接开始上传。
@@ -26,8 +26,8 @@ npm run build
 
 ## Connection
 
-在扩展设置中填入 Personal Hub 的 Canister ID（或带 `?canisterId=` 的 URL）以及以 `phk_` 开头的 API Key。API Key 只写入当前浏览器的 extension local storage，不会注入网页。
+在扩展设置中填入 IC OSS Bucket 的 Canister ID（或带 `?canisterId=` 的 URL）以及委托 access token。Token 支持 `base64:…`、base64url 和 `hex:…` 格式，只写入当前浏览器的 extension local storage，不会注入网页。
 
 ## API boundaries
 
-Personal Hub 当前的浏览器媒体接口只允许图片类型和 MP4；因此普通链接不会伪装成文件，而是使用 `api_create_content` 创建 Article。这保持了服务端的 MIME 校验和 Public Bucket 约束。
+扩展内置 IC OSS Bucket 的最小 Candid 客户端，直接调用 `create_file`、`update_file_chunk` 和 `update_file_info`。Token 会作为每次 Bucket 调用的 delegated access token 传入；请使用精确 audience、最小权限和较短有效期的 token。

@@ -22,7 +22,7 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({
       id: 'save-link',
       parentId: MENU_ROOT,
-      title: 'Save link as article',
+      title: 'Save link to IC OSS',
       contexts: ['link', 'page']
     })
   }).catch(() => {})

@@ -1,9 +1,9 @@
 export const STORAGE_KEY = 'media-uploader-settings'
 
 export const DEFAULTS = Object.freeze({
-  hub: '',
-  apiKey: '',
-  hubLabel: '',
+  bucket: '',
+  accessToken: '',
+  bucketLabel: '',
   connectedAt: ''
 })
 
@@ -26,14 +26,14 @@ export async function clearSettings() {
 export function normalize(value) {
   const input = value && typeof value === 'object' ? value : {}
   return {
-    hub: String(input.hub || '').trim(),
-    apiKey: String(input.apiKey || '').trim(),
-    hubLabel: String(input.hubLabel || '').trim(),
+    bucket: String(input.bucket || '').trim(),
+    accessToken: String(input.accessToken || '').trim(),
+    bucketLabel: String(input.bucketLabel || '').trim(),
     connectedAt: String(input.connectedAt || '').trim()
   }
 }
 
 export function isBound(value) {
   const settings = normalize(value)
-  return Boolean(settings.hub && settings.apiKey)
+  return Boolean(settings.bucket && settings.accessToken)
 }
