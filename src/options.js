@@ -8,7 +8,7 @@ document.querySelector('#settings-app').innerHTML = `
   <main class="settings-shell"><section class="settings-hero"><span class="eyebrow">MEDIA UPLOADER / CONFIG</span><h1>绑定你的<br><em>链上 Bucket。</em></h1><p>扩展直接使用 IC OSS 的委托 access token 写入 Bucket，不经过 Personal Hub。Token 只会保存在浏览器扩展的本地存储中。</p></section>
   <form id="settings-form" class="settings-card">
     <label><span>IC OSS Bucket Canister ID</span><small>填写 Bucket 的 Canister ID，也支持包含 canisterId 参数的自定义域名</small><input id="bucket" required placeholder="aaaaa-aa 或 https://…?canisterId=…"></label>
-    <label><span>IC OSS access token</span><small>粘贴 COSE 委托 token，支持 base64:…、base64url 或 hex:… 格式</small><textarea id="access-token" rows="4" required placeholder="base64:…"></textarea></label>
+    <label><span>IC OSS access token</span><small>粘贴 COSE 委托 token，支持 base64:…、base64url 或 hex:… 格式</small><div class="token-field"><textarea id="access-token" class="is-hidden" rows="4" required placeholder="base64:…" spellcheck="false"></textarea><button id="toggle-token" type="button" class="token-toggle">显示</button></div></label>
     <div class="settings-actions"><button id="test" type="button" class="quiet-button">测试连接</button><button type="submit" class="primary-button">保存连接 ↗</button></div>
     <div id="settings-status" class="settings-status">尚未保存连接</div>
   </form>
@@ -20,10 +20,16 @@ const bucket = document.querySelector('#bucket')
 const accessToken = document.querySelector('#access-token')
 const status = document.querySelector('#settings-status')
 const form = document.querySelector('#settings-form')
+const toggleToken = document.querySelector('#toggle-token')
 const initial = await loadSettings()
 bucket.value = initial.bucket
 accessToken.value = initial.accessToken
 if (isBound(initial)) showStatus(`已保存 · ${initial.bucketLabel || initial.bucket}`, 'success')
+
+toggleToken.addEventListener('click', () => {
+  const hidden = accessToken.classList.toggle('is-hidden')
+  toggleToken.textContent = hidden ? '显示' : '隐藏'
+})
 
 document.querySelector('#test').addEventListener('click', async () => {
   setBusy(true); showStatus('正在验证 Bucket 与 access token…', 'loading')

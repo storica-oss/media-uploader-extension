@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Media Uploader for IC OSS",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "将图片、MP4 视频和网页链接直接投递到你的 IC OSS。",
   "icons": {
     "16": "icons/icon-16.png",

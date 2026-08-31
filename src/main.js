@@ -100,6 +100,11 @@ if (params.get('url')) {
   history.replaceState({}, '', location.pathname)
 }
 await refreshConnection()
+chrome.storage.onChanged.addListener(async (changes, areaName) => {
+  if (areaName !== 'local' || !changes['media-uploader-settings']) return
+  await refreshConnection()
+  if (!currentAbort) setStatus(isBound(settings) ? '连接配置已更新' : '连接已解除，请重新绑定')
+})
 
 function addFiles(files) {
   const rejected = []
@@ -187,22 +192,22 @@ async function processQueue() {
   els.cancel.hidden = false
   currentAbort = new AbortController()
   try {
-    client ||= await createClient(settings.bucket, settings.accessToken)
+    const activeClient = client ||= await createClient(settings.bucket, settings.accessToken)
     for (const item of queue) {
       if (item.status === 'done') continue
       item.status = 'uploading'; item.progress = 0; schedulePersist(); render()
       try {
         let result
-        if (item.kind === 'file') result = await uploadFile({ client, file: item.file, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
-        else if (item.kind === 'image' || item.kind === 'video') result = await importRemoteMedia({ client, url: item.url, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        if (item.kind === 'file') result = await uploadFile({ client: activeClient, file: item.file, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        else if (item.kind === 'image' || item.kind === 'video') result = await importRemoteMedia({ client: activeClient, url: item.url, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
         else if (item.kind === 'auto') {
           try {
-            result = await importRemoteMedia({ client, url: item.url, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+            result = await importRemoteMedia({ client: activeClient, url: item.url, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
           } catch (error) {
             if (!/不是支持的图片或 MP4/.test(error.message || '')) throw error
-            result = await saveLink({ client, url: item.url, title: item.title || item.label, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+            result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
           }
-        } else result = await saveLink({ client, url: item.url, title: item.title || item.label, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        } else result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
         item.status = 'done'; item.progress = 100; item.result = result
       } catch (error) {
         if (currentAbort.signal.aborted) {

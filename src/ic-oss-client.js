@@ -167,19 +167,18 @@ export async function createClient(bucketValue, accessTokenValue) {
     async getBucketInfo() {
       return unwrap(await actor.get_bucket_info(token))
     },
-    async uploadFile(file, { signal, onProgress } = {}) {
+    async uploadFile(file, { signal, onProgress, contentType = file.type || 'application/octet-stream', name = file.name } = {}) {
       throwIfAborted(signal)
-      const contentType = file.type || 'application/octet-stream'
       const size = file.size
       if (size <= MAX_FILE_SIZE_PER_CALL) {
         const content = new Uint8Array(await file.arrayBuffer())
         const hash = sha3_256(content)
-        const result = unwrap(await actor.create_file(createInput({ file, contentType, size, content, hash }), token))
+        const result = unwrap(await actor.create_file(createInput({ file, name, contentType, size, content, hash }), token))
         onProgress?.({ phase: 'uploading', percent: 100, uploadedBytes: size, totalBytes: size })
         return asset(result.id, contentType, size)
       }
 
-      const created = unwrap(await actor.create_file(createInput({ file, contentType, size }), token))
+      const created = unwrap(await actor.create_file(createInput({ file, name, contentType, size }), token))
       const reader = file.stream().getReader()
       const result = await uploadReader({
         actor, token, reader, id: created.id, size, hash: null, signal, onProgress
@@ -201,7 +200,7 @@ export async function createClient(bucketValue, accessTokenValue) {
 }
 
 async function uploadReader({ actor, token, reader, id, size, hash, signal, onProgress }) {
-  const hasher = hash ? null : sha3_256.create()
+  const hasher = sha3_256.create()
   let pending = new Uint8Array()
   let uploaded = 0
   let index = 0
@@ -215,7 +214,7 @@ async function uploadReader({ actor, token, reader, id, size, hash, signal, onPr
       while (pending.byteLength >= CHUNK_SIZE) {
         const chunk = pending.slice(0, CHUNK_SIZE)
         pending = pending.slice(CHUNK_SIZE)
-        hasher?.update(chunk)
+        hasher.update(chunk)
         await retry(() => actor.update_file_chunk({ id, chunk_index: index, content: chunk }, token), signal)
         index += 1
         uploaded += chunk.byteLength
@@ -224,13 +223,14 @@ async function uploadReader({ actor, token, reader, id, size, hash, signal, onPr
       if (uploaded + pending.byteLength > size) throw new Error('远程内容超过首次校验结果')
     }
     if (pending.byteLength) {
-      hasher?.update(pending)
+      hasher.update(pending)
       await retry(() => actor.update_file_chunk({ id, chunk_index: index, content: pending }, token), signal)
       uploaded += pending.byteLength
       onProgress?.({ phase: 'uploading', percent: 100, uploadedBytes: uploaded, totalBytes: size })
     }
     if (uploaded !== size) throw new Error(`内容已变化：预期 ${size} 字节，实际 ${uploaded} 字节`)
-    const finalHash = hash || hasher.digest()
+    const finalHash = hasher.digest()
+    if (hash && !sameBytes(hash, finalHash)) throw new Error('远程内容在两次读取之间发生变化，请重试')
     unwrap(await actor.update_file_info({
       id, status: [], custom: [], hash: [finalHash], name: [], size: [BigInt(size)], content_type: []
     }, token))
@@ -240,14 +240,14 @@ async function uploadReader({ actor, token, reader, id, size, hash, signal, onPr
   }
 }
 
-function createInput({ file, contentType, size, content = null, hash = null }) {
+function createInput({ file, name = file.name, contentType, size, content = null, hash = null }) {
   return {
     dek: [],
     status: [],
     content: content ? [content] : [],
     custom: [],
     hash: hash ? [hash] : [],
-    name: file.name,
+    name,
     size: [BigInt(size)],
     encryption: [],
     content_type: contentType,
@@ -279,6 +279,11 @@ function concatBytes(left, right) {
   result.set(left)
   result.set(right, left.byteLength)
   return result
+}
+
+function sameBytes(left, right) {
+  if (left.byteLength !== right.byteLength) return false
+  return left.every((byte, index) => byte === right[index])
 }
 
 async function retry(operation, signal, attempts = 3) {

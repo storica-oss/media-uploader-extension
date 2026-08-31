@@ -15,7 +15,8 @@ export async function uploadFile({ client, file, signal, onProgress }) {
   if (!file.size || file.size > 2 * 1024 * 1024) {
     if (!family) throw new Error('链接文件超过大小限制')
   }
-  const asset = await client.uploadFile(file, { signal, onProgress })
+  const name = safeName(file.name, family === 'video' ? 'video.mp4' : family === 'image' ? 'image.jpg' : 'link.url.txt')
+  const asset = await client.uploadFile(file, { signal, onProgress, contentType, name })
   return { type: family || 'link', asset, contentType, size: file.size }
 }
 
