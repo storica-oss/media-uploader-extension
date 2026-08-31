@@ -1,5 +1,7 @@
 # Media Uploader for IC OSS
 
+Standalone repository: <https://github.com/storica-oss/media-uploader-extension>
+
 一个 Manifest V3 浏览器扩展，把 `media_bot` 的媒体处理思路重构成一个轻量的 IC OSS 投递箱：
 
 - 拖拽或选择本地 JPEG、PNG、WebP、AVIF、GIF 和 MP4，使用 Personal Hub API Key 分片上传。
