@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Media Uploader for IC OSS",
+  "version": "0.1.0",
+  "description": "将图片、MP4 视频和网页链接直接投递到你的 IC OSS。",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": ["storage", "contextMenus", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "assets/background.js" },
+  "action": {
+    "default_title": "Upload to IC OSS",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "commands": {
+    "open-uploader": {
+      "suggested_key": { "default": "Ctrl+Shift+U", "mac": "Command+Shift+U" },
+      "description": "打开 IC OSS 上传器"
+    }
+  }
+}
