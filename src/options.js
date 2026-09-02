@@ -8,7 +8,7 @@ document.querySelector('#settings-app').innerHTML = `
   <main class="settings-shell"><section class="settings-hero"><span class="eyebrow">MEDIA UPLOADER / CONFIG</span><h1>绑定你的<br><em>链上 Bucket。</em></h1><p>扩展直接使用 IC OSS 的委托 access token 写入 Bucket，不经过 Personal Hub。Token 只会保存在浏览器扩展的本地存储中。</p></section>
   <form id="settings-form" class="settings-card">
     <label><span>IC OSS Bucket Canister ID</span><small>填写 Bucket 的 Canister ID，也支持包含 canisterId 参数的自定义域名</small><input id="bucket" required placeholder="aaaaa-aa 或 https://…?canisterId=…"></label>
-    <label><span>IC OSS access token</span><small>粘贴 COSE 委托 token，支持 base64:…、base64url 或 hex:… 格式</small><div class="token-field"><textarea id="access-token" class="is-hidden" rows="4" required placeholder="base64:…" spellcheck="false"></textarea><button id="toggle-token" type="button" class="token-toggle">显示</button></div></label>
+    <label><span>IC OSS access token</span><small>粘贴 COSE 委托 token；也可以直接把 OSS Admin 的绑定 JSON 粘贴到任意字段</small><div class="token-field"><textarea id="access-token" class="is-hidden" rows="4" required placeholder="base64:…" spellcheck="false"></textarea><button id="toggle-token" type="button" class="token-toggle">显示</button></div></label>
     <div class="settings-actions"><button id="import-binding" type="button" class="quiet-button">从剪贴板导入</button><button id="test" type="button" class="quiet-button">测试连接</button><button type="submit" class="primary-button">保存连接 ↗</button></div>
     <div id="settings-status" class="settings-status">尚未保存连接</div>
   </form>
@@ -34,21 +34,27 @@ toggleToken.addEventListener('click', () => {
 document.querySelector('#import-binding').addEventListener('click', async () => {
   setBusy(true); showStatus('正在读取 Admin 复制的绑定配置…', 'loading')
   try {
-    const raw = await navigator.clipboard.readText()
-    const binding = JSON.parse(raw)
-    if (binding?.type !== 'storica-media-uploader-binding' || binding?.version !== 1) {
-      throw new Error('不是有效的 Media Uploader 绑定配置')
-    }
-    if (typeof binding.bucket !== 'string' || !binding.bucket.trim() || typeof binding.accessToken !== 'string' || !binding.accessToken.trim()) {
-      throw new Error('绑定配置缺少 Bucket 或 access token')
-    }
-    bucket.value = binding.bucket
-    accessToken.value = binding.accessToken
+    applyBinding(parseBinding(await navigator.clipboard.readText()))
     showStatus('绑定配置已导入 · 点击测试连接或保存连接', 'success')
   } catch (error) {
     showStatus(error.message || '导入失败，请先在 OSS Admin 复制绑定配置', 'error')
   } finally { setBusy(false) }
 })
+
+for (const field of [bucket, accessToken]) {
+  field.addEventListener('paste', (event) => {
+    const raw = event.clipboardData?.getData('text') || ''
+    if (!raw.trimStart().startsWith('{')) return
+    try {
+      applyBinding(parseBinding(raw))
+      event.preventDefault()
+      showStatus('绑定配置已粘贴 · 点击测试连接或保存连接', 'success')
+    } catch (error) {
+      event.preventDefault()
+      showStatus(error.message || '绑定配置格式不正确', 'error')
+    }
+  })
+}
 
 document.querySelector('#test').addEventListener('click', async () => {
   setBusy(true); showStatus('正在验证 Bucket 与 access token…', 'loading')
@@ -77,3 +83,19 @@ document.querySelector('#clear').addEventListener('click', async () => {
 
 function showStatus(message, state = '') { status.textContent = message; status.dataset.state = state }
 function setBusy(busy) { document.querySelectorAll('button').forEach((button) => { button.disabled = busy }) }
+
+function parseBinding(raw) {
+  const binding = JSON.parse(raw)
+  if (binding?.type !== 'storica-media-uploader-binding' || binding?.version !== 1) {
+    throw new Error('不是有效的 Media Uploader 绑定配置')
+  }
+  if (typeof binding.bucket !== 'string' || !binding.bucket.trim() || typeof binding.accessToken !== 'string' || !binding.accessToken.trim()) {
+    throw new Error('绑定配置缺少 Bucket 或 access token')
+  }
+  return binding
+}
+
+function applyBinding(binding) {
+  bucket.value = binding.bucket.trim()
+  accessToken.value = binding.accessToken.trim()
+}
