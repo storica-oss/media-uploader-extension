@@ -9,7 +9,7 @@ document.querySelector('#settings-app').innerHTML = `
   <form id="settings-form" class="settings-card">
     <label><span>IC OSS Bucket Canister ID</span><small>填写 Bucket 的 Canister ID，也支持包含 canisterId 参数的自定义域名</small><input id="bucket" required placeholder="aaaaa-aa 或 https://…?canisterId=…"></label>
     <label><span>IC OSS access token</span><small>粘贴 COSE 委托 token，支持 base64:…、base64url 或 hex:… 格式</small><div class="token-field"><textarea id="access-token" class="is-hidden" rows="4" required placeholder="base64:…" spellcheck="false"></textarea><button id="toggle-token" type="button" class="token-toggle">显示</button></div></label>
-    <div class="settings-actions"><button id="test" type="button" class="quiet-button">测试连接</button><button type="submit" class="primary-button">保存连接 ↗</button></div>
+    <div class="settings-actions"><button id="import-binding" type="button" class="quiet-button">从剪贴板导入</button><button id="test" type="button" class="quiet-button">测试连接</button><button type="submit" class="primary-button">保存连接 ↗</button></div>
     <div id="settings-status" class="settings-status">尚未保存连接</div>
   </form>
   <section class="security-note"><span>◎</span><div><strong>安全提醒</strong><p>Token 不会注入网页，也不会上传到第三方服务。请给 token 设置精确的 Bucket audience、最小权限和较短有效期；失效或撤销后可随时在这里替换。</p></div></section>
@@ -29,6 +29,25 @@ if (isBound(initial)) showStatus(`已保存 · ${initial.bucketLabel || initial.
 toggleToken.addEventListener('click', () => {
   const hidden = accessToken.classList.toggle('is-hidden')
   toggleToken.textContent = hidden ? '显示' : '隐藏'
+})
+
+document.querySelector('#import-binding').addEventListener('click', async () => {
+  setBusy(true); showStatus('正在读取 Admin 复制的绑定配置…', 'loading')
+  try {
+    const raw = await navigator.clipboard.readText()
+    const binding = JSON.parse(raw)
+    if (binding?.type !== 'storica-media-uploader-binding' || binding?.version !== 1) {
+      throw new Error('不是有效的 Media Uploader 绑定配置')
+    }
+    if (typeof binding.bucket !== 'string' || !binding.bucket.trim() || typeof binding.accessToken !== 'string' || !binding.accessToken.trim()) {
+      throw new Error('绑定配置缺少 Bucket 或 access token')
+    }
+    bucket.value = binding.bucket
+    accessToken.value = binding.accessToken
+    showStatus('绑定配置已导入 · 点击测试连接或保存连接', 'success')
+  } catch (error) {
+    showStatus(error.message || '导入失败，请先在 OSS Admin 复制绑定配置', 'error')
+  } finally { setBusy(false) }
 })
 
 document.querySelector('#test').addEventListener('click', async () => {

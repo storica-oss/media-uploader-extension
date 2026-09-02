@@ -26,7 +26,7 @@ npm run build
 
 ## Connection
 
-在扩展设置中填入 IC OSS Bucket 的 Canister ID（或带 `?canisterId=` 的 URL）以及委托 access token。Token 支持 `base64:…`、base64url 和 `hex:…` 格式，只写入当前浏览器的 extension local storage，不会注入网页。
+在扩展设置中填入 IC OSS Bucket 的 Canister ID（或带 `?canisterId=` 的 URL）以及委托 access token。也可以在 OSS Admin 的“安全与访问 → 上传 Token 管理”中生成或升级 Token，点击“复制扩展绑定配置”，再回到扩展设置点击“从剪贴板导入”，即可自动填入两项配置。Token 支持 `base64:…`、base64url 和 `hex:…` 格式，只写入当前浏览器的 extension local storage，不会注入网页。
 
 ## API boundaries
 
