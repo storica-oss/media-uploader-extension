@@ -4,7 +4,10 @@ export const DEFAULTS = Object.freeze({
   bucket: '',
   accessToken: '',
   bucketLabel: '',
-  connectedAt: ''
+  connectedAt: '',
+  uploadFolderId: 0,
+  uploadFolderName: '根目录',
+  uploadFolderPath: ['根目录']
 })
 
 export async function loadSettings() {
@@ -29,7 +32,14 @@ export function normalize(value) {
     bucket: String(input.bucket || '').trim(),
     accessToken: String(input.accessToken || '').trim(),
     bucketLabel: String(input.bucketLabel || '').trim(),
-    connectedAt: String(input.connectedAt || '').trim()
+    connectedAt: String(input.connectedAt || '').trim(),
+    uploadFolderId: Number.isSafeInteger(Number(input.uploadFolderId)) && Number(input.uploadFolderId) >= 0
+      ? Number(input.uploadFolderId)
+      : 0,
+    uploadFolderName: String(input.uploadFolderName || '根目录').trim() || '根目录',
+    uploadFolderPath: Array.isArray(input.uploadFolderPath) && input.uploadFolderPath.length
+      ? input.uploadFolderPath.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 64)
+      : ['根目录']
   }
 }
 

@@ -99,6 +99,17 @@ const idlFactory = ({ IDL }) => {
     parent: IDL.Nat32
   })
   const createFileOutput = IDL.Record({ id: IDL.Nat32, created_at: IDL.Nat64 })
+  const folderInfo = IDL.Record({
+    id: IDL.Nat32,
+    files: IDL.Vec(IDL.Nat32),
+    status: IDL.Int8,
+    updated_at: IDL.Nat64,
+    name: IDL.Text,
+    folders: IDL.Vec(IDL.Nat32),
+    created_at: IDL.Nat64,
+    revision: IDL.Nat64,
+    parent: IDL.Nat32
+  })
   const updateFileChunkInput = IDL.Record({
     id: IDL.Nat32,
     chunk_index: IDL.Nat32,
@@ -117,6 +128,8 @@ const idlFactory = ({ IDL }) => {
   const updateFileOutput = IDL.Record({ updated_at: IDL.Nat64 })
   return IDL.Service({
     get_bucket_info: IDL.Func([IDL.Opt(IDL.Vec(IDL.Nat8))], [result(bucketInfo)], ['query']),
+    list_folders: IDL.Func([IDL.Nat32, IDL.Opt(IDL.Nat32), IDL.Opt(IDL.Nat32), IDL.Opt(IDL.Vec(IDL.Nat8))], [result(IDL.Vec(folderInfo))], ['query']),
+    create_folder: IDL.Func([IDL.Record({ name: IDL.Text, parent: IDL.Nat32 }), IDL.Opt(IDL.Vec(IDL.Nat8))], [result(createFileOutput)], []),
     create_file: IDL.Func([createFileInput, IDL.Opt(IDL.Vec(IDL.Nat8))], [result(createFileOutput)], []),
     update_file_chunk: IDL.Func([updateFileChunkInput, IDL.Opt(IDL.Vec(IDL.Nat8))], [result(updateFileChunkOutput)], []),
     update_file_info: IDL.Func([updateFileInput, IDL.Opt(IDL.Vec(IDL.Nat8))], [result(updateFileOutput)], [])
@@ -167,29 +180,35 @@ export async function createClient(bucketValue, accessTokenValue) {
     async getBucketInfo() {
       return unwrap(await actor.get_bucket_info(token))
     },
-    async uploadFile(file, { signal, onProgress, contentType = file.type || 'application/octet-stream', name = file.name } = {}) {
+    async listFolders(parent = 0) {
+      return unwrap(await actor.list_folders(parent, [], [100], token))
+    },
+    async createFolder(name, parent = 0) {
+      return unwrap(await actor.create_folder({ name, parent }, token))
+    },
+    async uploadFile(file, { signal, onProgress, contentType = file.type || 'application/octet-stream', name = file.name, parent = 0 } = {}) {
       throwIfAborted(signal)
       const size = file.size
       if (size <= MAX_FILE_SIZE_PER_CALL) {
         const content = new Uint8Array(await file.arrayBuffer())
         const hash = sha3_256(content)
-        const result = unwrap(await actor.create_file(createInput({ file, name, contentType, size, content, hash }), token))
+        const result = unwrap(await actor.create_file(createInput({ file, name, contentType, size, content, hash, parent }), token))
         onProgress?.({ phase: 'uploading', percent: 100, uploadedBytes: size, totalBytes: size })
         return asset(result.id, contentType, size)
       }
 
-      const created = unwrap(await actor.create_file(createInput({ file, name, contentType, size }), token))
+      const created = unwrap(await actor.create_file(createInput({ file, name, contentType, size, parent }), token))
       const reader = file.stream().getReader()
       const result = await uploadReader({
         actor, token, reader, id: created.id, size, hash: null, signal, onProgress
       })
       return asset(result.id, contentType, size)
     },
-    async uploadStream({ reader, name, contentType, size, hash, signal, onProgress }) {
+    async uploadStream({ reader, name, contentType, size, hash, signal, onProgress, parent = 0 }) {
       throwIfAborted(signal)
       const created = unwrap(await actor.create_file({
         dek: [], status: [], content: [], custom: [], hash: [], name,
-        size: [BigInt(size)], encryption: [], content_type: contentType, parent: 0
+        size: [BigInt(size)], encryption: [], content_type: contentType, parent
       }, token))
       const result = await uploadReader({
         actor, token, reader, id: created.id, size, hash, signal, onProgress
@@ -240,7 +259,7 @@ async function uploadReader({ actor, token, reader, id, size, hash, signal, onPr
   }
 }
 
-function createInput({ file, name = file.name, contentType, size, content = null, hash = null }) {
+function createInput({ file, name = file.name, contentType, size, content = null, hash = null, parent = 0 }) {
   return {
     dek: [],
     status: [],
@@ -251,7 +270,7 @@ function createInput({ file, name = file.name, contentType, size, content = null
     size: [BigInt(size)],
     encryption: [],
     content_type: contentType,
-    parent: 0
+    parent
   }
 }
 

@@ -37,6 +37,27 @@ h1 { margin-top: 9px; font-size: clamp(29px, 7vw, 46px); line-height: .98; lette
 h1 em { color: var(--lime); font-style: normal; }
 .hero p { max-width: 360px; margin-top: 13px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .hero-mark { display: grid; width: 55px; height: 55px; place-items: center; flex: none; border: 1px solid rgba(201,255,61,.24); color: var(--lime); font-size: 26px; transform: rotate(-10deg); }
+.destination-card { display: grid; gap: 12px; padding: 14px; border: 1px solid rgba(100,244,255,.18); background: linear-gradient(145deg, rgba(100,244,255,.06), rgba(17,19,25,.72)); }
+.destination-copy { display: grid; gap: 5px; min-width: 0; }
+.destination-copy strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.destination-copy small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.destination-actions { display: flex; gap: 8px; }
+.destination-actions button { flex: 1; }
+.folder-picker { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.folder-picker-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.folder-picker-header strong { overflow: hidden; color: var(--muted); font: 700 10px ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.folder-picker-header .quiet-button, .folder-picker-header .primary-button { min-height: 31px; padding-inline: 9px; font-size: 9px; }
+.folder-list { display: grid; gap: 5px; max-height: 220px; overflow: auto; }
+.folder-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 35px; padding: 6px 8px; border: 1px solid var(--line); background: rgba(255,255,255,.025); color: #e5e8e0; text-align: left; }
+.folder-row:hover { border-color: rgba(201,255,61,.4); background: rgba(201,255,61,.06); }
+.folder-row > span { color: var(--cyan); font-size: 15px; }
+.folder-row strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.folder-row small { color: var(--subtle); font-size: 9px; }
+.folder-list-empty { padding: 13px 8px; border: 1px dashed var(--line); color: var(--muted); font-size: 10px; text-align: center; }
+.new-folder-form { display: flex; gap: 7px; }
+.new-folder-form input { flex: 1; min-width: 0; height: 34px; padding: 0 9px; font-size: 11px; }
+.new-folder-form button { flex: none; }
+.folder-picker-status { min-height: 14px; color: #ffb0b0; font-size: 9px; line-height: 1.5; }
 .drop-card { display: flex; min-height: 196px; align-items: center; justify-content: center; flex-direction: column; gap: 8px; border: 1px dashed rgba(201,255,61,.35); background: linear-gradient(145deg, rgba(201,255,61,.08), rgba(17,19,25,.78) 52%); transition: .18s ease; }
 .drop-card[data-dragging="true"] { border-color: var(--lime); background: rgba(201,255,61,.15); transform: scale(1.01); }
 .drop-icon { display: grid; width: 42px; height: 42px; place-items: center; margin-bottom: 3px; border: 1px solid rgba(201,255,61,.38); color: var(--lime); font-size: 24px; }

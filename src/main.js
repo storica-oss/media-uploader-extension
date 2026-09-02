@@ -11,6 +11,12 @@ let client
 let queue = []
 let currentAbort
 let persistTimer
+let destination = { id: 0, name: '根目录', path: ['根目录'] }
+let folderPickerOpen = false
+let folderPickerPath = [{ id: 0, name: '根目录' }]
+let folderPickerFolders = []
+let folderPickerLoading = false
+let folderPickerError = ''
 
 app.innerHTML = `
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
@@ -24,6 +30,16 @@ app.innerHTML = `
     <section class="hero">
       <div><span class="eyebrow">MEDIA UPLOADER / 01</span><h1>把素材投递到<br><em>你的链上云。</em></h1><p>图片、MP4 视频和网页链接，直接进入你的 IC OSS。</p></div>
       <div class="hero-mark" aria-hidden="true">↗</div>
+    </section>
+    <section class="destination-card">
+      <div class="destination-copy"><span class="eyebrow">UPLOAD DESTINATION</span><strong id="destination-label">根目录</strong><small id="destination-path">根目录 · 新加入的素材将上传到这里</small></div>
+      <div class="destination-actions"><button id="choose-destination" class="quiet-button" type="button">选择目录</button><button id="create-destination" class="primary-button" type="button">新建目录</button></div>
+      <div id="folder-picker" class="folder-picker" hidden>
+        <div class="folder-picker-header"><button id="folder-picker-back" class="quiet-button" type="button">返回上级</button><strong id="folder-picker-path">根目录</strong><button id="folder-picker-use" class="primary-button" type="button">使用当前目录</button></div>
+        <div id="folder-list" class="folder-list"></div>
+        <form id="new-folder-form" class="new-folder-form"><input id="new-folder-name" type="text" maxlength="96" placeholder="新目录名称" autocomplete="off"><button class="quiet-button" type="submit">创建并使用</button></form>
+        <p id="folder-picker-status" class="folder-picker-status"></p>
+      </div>
     </section>
     <section class="drop-card" id="drop-zone">
       <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/gif,video/mp4" multiple hidden>
@@ -47,7 +63,8 @@ app.innerHTML = `
 const els = {
   connection: document.querySelector('#connection'), fileInput: document.querySelector('#file-input'), dropZone: document.querySelector('#drop-zone'),
   urlInput: document.querySelector('#url-input'), queue: document.querySelector('#queue'), queueCount: document.querySelector('#queue-count'),
-  queueSummary: document.querySelector('#queue-summary'), status: document.querySelector('#status'), start: document.querySelector('#start-upload'), cancel: document.querySelector('#cancel-upload')
+  queueSummary: document.querySelector('#queue-summary'), status: document.querySelector('#status'), start: document.querySelector('#start-upload'), cancel: document.querySelector('#cancel-upload'),
+  destinationLabel: document.querySelector('#destination-label'), destinationPath: document.querySelector('#destination-path'), folderPicker: document.querySelector('#folder-picker'), folderPickerBack: document.querySelector('#folder-picker-back'), folderPickerPath: document.querySelector('#folder-picker-path'), folderList: document.querySelector('#folder-list'), folderPickerUse: document.querySelector('#folder-picker-use'), newFolderForm: document.querySelector('#new-folder-form'), newFolderName: document.querySelector('#new-folder-name'), folderPickerStatus: document.querySelector('#folder-picker-status')
 }
 
 document.querySelector('#settings').addEventListener('click', () => chrome.runtime.openOptionsPage())
@@ -69,6 +86,18 @@ document.querySelector('#open-dashboard').addEventListener('click', (event) => {
 })
 els.urlInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') addUrl() })
 document.querySelector('#clear-queue').addEventListener('click', clearQueue)
+document.querySelector('#choose-destination').addEventListener('click', () => openFolderPicker())
+document.querySelector('#create-destination').addEventListener('click', () => openFolderPicker(true))
+els.folderPickerBack.addEventListener('click', () => {
+  if (folderPickerPath.length <= 1) return closeFolderPicker()
+  folderPickerPath.pop()
+  loadFolderPickerFolders()
+})
+els.folderPickerUse.addEventListener('click', () => useFolder(folderPickerPath.at(-1)))
+els.newFolderForm.addEventListener('submit', (event) => {
+  event.preventDefault()
+  createFolder()
+})
 els.start.addEventListener('click', processQueue)
 els.cancel.addEventListener('click', () => currentAbort?.abort(new Error('上传已停止')))
 document.addEventListener('keydown', (event) => {
@@ -94,6 +123,7 @@ document.querySelector('#open-dashboard').hidden = pageMode
 if (pageMode) document.title = 'IC OSS Uploader'
 const params = new URLSearchParams(location.search)
 queue = await restoreQueue()
+setDestinationFromSettings(settings)
 if (params.get('url')) {
   els.urlInput.value = params.get('url')
   addUrl(params.get('url'), params.get('kind'), params.get('title'))
@@ -119,7 +149,7 @@ function addFiles(files) {
       continue
     }
     const preview = isImageFile(file) ? URL.createObjectURL(file) : ''
-    queue.push({ id: crypto.randomUUID(), kind: 'file', label: file.name, detail: formatBytes(file.size), file, preview, status: 'ready', progress: 0 })
+    queue.push({ id: crypto.randomUUID(), kind: 'file', label: file.name, detail: formatBytes(file.size), file, preview, ...itemDestination(), status: 'ready', progress: 0 })
   }
   if (rejected.length) setStatus(`${rejected.slice(0, 2).join('、')}${rejected.length > 2 ? ` 等 ${rejected.length} 个文件未加入` : '未加入'}`)
   schedulePersist()
@@ -140,7 +170,7 @@ function addUrl(value = els.urlInput.value, forcedKind = '', forcedTitle = '') {
   try { parsed = new URL(url) } catch { return setStatus('链接格式不正确') }
   if (!/^https?:$/.test(parsed.protocol)) return setStatus('只支持 http(s) 链接')
   const kind = forcedKind || detectUrlType(url)
-  queue.push({ id: crypto.randomUUID(), kind, label: forcedTitle || parsed.hostname, detail: url, url, title: forcedTitle, status: 'ready', progress: 0 })
+  queue.push({ id: crypto.randomUUID(), kind, label: forcedTitle || parsed.hostname, detail: url, url, title: forcedTitle, ...itemDestination(), status: 'ready', progress: 0 })
   if (value === els.urlInput.value) els.urlInput.value = ''
   schedulePersist()
   render()
@@ -178,10 +208,125 @@ function clearQueue() {
 
 async function refreshConnection() {
   settings = await loadSettings()
+  setDestinationFromSettings(settings)
   const bound = isBound(settings)
   els.connection.textContent = bound ? `● ${settings.bucketLabel || settings.bucket}` : '未连接'
   els.connection.dataset.state = bound ? 'connected' : 'idle'
   client = null
+  renderDestination()
+}
+
+function setDestinationFromSettings(value) {
+  const id = Number(value.uploadFolderId)
+  destination = {
+    id: Number.isSafeInteger(id) && id >= 0 ? id : 0,
+    name: value.uploadFolderName || '根目录',
+    path: Array.isArray(value.uploadFolderPath) && value.uploadFolderPath.length ? value.uploadFolderPath : ['根目录']
+  }
+}
+
+async function persistDestination() {
+  settings = await saveSettings({
+    ...settings,
+    uploadFolderId: destination.id,
+    uploadFolderName: destination.name,
+    uploadFolderPath: destination.path
+  })
+}
+
+function renderDestination() {
+  els.destinationLabel.textContent = destination.name
+  els.destinationPath.textContent = `${destination.path.join(' / ')} · 新加入的素材将上传到这里`
+  els.folderPicker.hidden = !folderPickerOpen
+  els.folderPickerPath.textContent = folderPickerPath.map((item) => item.name).join(' / ')
+  els.folderPickerBack.disabled = folderPickerLoading || folderPickerPath.length <= 1
+  els.folderPickerUse.disabled = folderPickerLoading
+  els.newFolderName.disabled = folderPickerLoading
+  els.folderPickerStatus.textContent = folderPickerError || (folderPickerLoading ? '正在读取目录…' : '')
+  els.folderList.innerHTML = folderPickerLoading
+    ? '<div class="folder-list-empty">正在读取子目录…</div>'
+    : folderPickerFolders.length
+      ? folderPickerFolders.map((folder) => `<button type="button" class="folder-row" data-folder-id="${folder.id}"><span>⌁</span><strong>${escapeHtml(folder.name)}</strong><small>进入目录</small></button>`).join('')
+      : '<div class="folder-list-empty">当前目录还没有子目录</div>'
+  els.folderList.querySelectorAll('[data-folder-id]').forEach((button) => button.addEventListener('click', () => {
+    const folder = folderPickerFolders.find((item) => String(item.id) === button.dataset.folderId)
+    if (!folder) return
+    folderPickerPath.push({ id: folder.id, name: folder.name })
+    loadFolderPickerFolders()
+  }))
+}
+
+async function openFolderPicker(focusCreate = false) {
+  if (!isBound(settings)) return setStatus('请先在设置中绑定 IC OSS Bucket 与 access token')
+  folderPickerOpen = true
+  folderPickerPath = [{ id: 0, name: '根目录' }]
+  folderPickerFolders = []
+  folderPickerError = ''
+  renderDestination()
+  await loadFolderPickerFolders()
+  if (focusCreate) els.newFolderName.focus()
+}
+
+function closeFolderPicker() {
+  folderPickerOpen = false
+  folderPickerError = ''
+  renderDestination()
+}
+
+async function loadFolderPickerFolders() {
+  if (!folderPickerOpen || !isBound(settings)) return
+  folderPickerLoading = true
+  folderPickerError = ''
+  renderDestination()
+  try {
+    const activeClient = client ||= await createClient(settings.bucket, settings.accessToken)
+    folderPickerFolders = (await activeClient.listFolders(folderPickerPath.at(-1).id)).filter((folder) => folder.status >= 0)
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  } catch (error) {
+    folderPickerFolders = []
+    folderPickerError = `目录读取失败：${error.message || String(error)}；当前仍可上传到已选目录。`
+  } finally {
+    folderPickerLoading = false
+    renderDestination()
+  }
+}
+
+function useFolder(folder) {
+  if (!folder) return
+  destination = { id: folder.id, name: folder.name, path: folderPickerPath.map((item) => item.name) }
+  void persistDestination()
+  closeFolderPicker()
+  setStatus(`已切换上传目录：${destination.path.join(' / ')}`)
+}
+
+async function createFolder() {
+  const name = els.newFolderName.value.trim()
+  if (!name || folderPickerLoading) return setStatus('请输入新目录名称')
+  if (!isBound(settings)) return setStatus('请先绑定 IC OSS')
+  folderPickerLoading = true
+  folderPickerError = ''
+  renderDestination()
+  try {
+    const activeClient = client ||= await createClient(settings.bucket, settings.accessToken)
+    const result = await activeClient.createFolder(name, folderPickerPath.at(-1).id)
+    const created = { id: result.id, name, path: [...folderPickerPath.map((item) => item.name), name] }
+    destination = created
+    await persistDestination()
+    folderPickerPath.push({ id: created.id, name: created.name })
+    folderPickerFolders = []
+    els.newFolderName.value = ''
+    setStatus(`目录已创建并设为上传目标：${created.path.join(' / ')}`)
+    await loadFolderPickerFolders()
+  } catch (error) {
+    folderPickerError = `目录创建失败：${error.message || String(error)}`
+  } finally {
+    folderPickerLoading = false
+    renderDestination()
+  }
+}
+
+function itemDestination() {
+  return { parent: destination.id, folderPath: [...destination.path] }
 }
 
 async function processQueue() {
@@ -198,16 +343,16 @@ async function processQueue() {
       item.status = 'uploading'; item.progress = 0; schedulePersist(); render()
       try {
         let result
-        if (item.kind === 'file') result = await uploadFile({ client: activeClient, file: item.file, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
-        else if (item.kind === 'image' || item.kind === 'video') result = await importRemoteMedia({ client: activeClient, url: item.url, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        if (item.kind === 'file') result = await uploadFile({ client: activeClient, file: item.file, parent: item.parent || 0, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        else if (item.kind === 'image' || item.kind === 'video') result = await importRemoteMedia({ client: activeClient, url: item.url, parent: item.parent || 0, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
         else if (item.kind === 'auto') {
           try {
-            result = await importRemoteMedia({ client: activeClient, url: item.url, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+            result = await importRemoteMedia({ client: activeClient, url: item.url, parent: item.parent || 0, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
           } catch (error) {
             if (!/不是支持的图片或 MP4/.test(error.message || '')) throw error
-            result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+            result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, parent: item.parent || 0, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
           }
-        } else result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        } else result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, parent: item.parent || 0, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
         item.status = 'done'; item.progress = 100; item.result = result
       } catch (error) {
         if (currentAbort.signal.aborted) {
@@ -259,7 +404,8 @@ function render() {
 function renderItem(item) {
   const icon = item.kind === 'video' ? '▶' : item.kind === 'image' || item.kind === 'file' ? '▧' : '↗'
   const resultId = item.result?.asset?.id ? `File #${item.result.asset.id}` : ''
-  const status = item.status === 'done' ? `已完成${resultId ? ` · ${resultId}` : ''}` : item.status === 'error' ? item.error : item.status === 'uploading' ? `${item.phase || '上传中'} ${item.progress}%` : item.detail
+  const targetPath = Array.isArray(item.folderPath) && item.folderPath.length ? ` · ${item.folderPath.join(' / ')}` : ''
+  const status = item.status === 'done' ? `已完成${resultId ? ` · ${resultId}` : ''}${targetPath}` : item.status === 'error' ? `${item.error}${targetPath}` : item.status === 'uploading' ? `${item.phase || '上传中'} ${item.progress}% · ${item.folderPath?.at(-1) || '根目录'}` : `${item.detail}${targetPath}`
   const visual = item.preview ? `<img class="item-preview" src="${escapeHtml(item.preview)}" alt="">` : `<div class="item-icon item-${item.kind}">${icon}</div>`
   const retryButton = item.status === 'error' ? `<button class="retry-button" data-retry="${item.id}">重试</button>` : ''
   return `<article class="queue-item" data-state="${item.status}">${visual}<div class="item-copy"><strong title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</strong><small title="${escapeHtml(status)}">${escapeHtml(status)}</small>${item.status === 'uploading' ? `<div class="progress"><i style="width:${item.progress}%"></i></div>` : ''}</div>${retryButton}<button class="remove-button" data-remove="${item.id}" aria-label="移除">×</button></article>`

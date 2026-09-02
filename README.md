@@ -10,6 +10,7 @@ Standalone repository: <https://github.com/storica-oss/media-uploader-extension>
 - 支持右键菜单：在图片、视频、链接或页面上选择 `Save to IC OSS`，直接打开完整上传器。
 - 支持点击投递区选文件、粘贴剪贴板截图/文件、粘贴未知后缀的媒体地址，以及将当前标签页一键加入队列。
 - 队列中的图片显示缩略图；`Ctrl/Cmd + Enter` 可直接开始上传。
+- 上传前可选择 Bucket 根目录或任意可见子目录，也可以在扩展内创建目录；每个队列项会记住加入时的目标目录。
 - 队列会保存在扩展本地 IndexedDB；关闭弹窗或重开上传页后，本地文件、链接和失败任务仍可继续处理。
 - 可以把浏览器里的链接直接拖进投递区；不支持的文件类型或超出大小限制的文件会在入队时立即被拦截。
 - 远程 MP4 使用流式校验和分片上传，不需要先把整个视频加载成内存 Blob；批量上传支持停止和单项重试。
@@ -27,6 +28,8 @@ npm run build
 ## Connection
 
 在扩展设置中填入 IC OSS Bucket 的 Canister ID（或带 `?canisterId=` 的 URL）以及委托 access token。也可以在 OSS Admin 的“安全与访问 → 上传 Token 管理”中生成或升级 Token，点击“复制扩展绑定配置”，再回到扩展设置点击“从剪贴板导入”，或直接将绑定 JSON 粘贴到任意字段，即可自动填入两项配置。Token 支持 `base64:…`、base64url 和 `hex:…` 格式，只写入当前浏览器的 extension local storage，不会注入网页。
+
+如果需要浏览或创建上传目录，请使用包含 `Folder.Read`、`Folder.List` 和 `Bucket.Write:Folder` 的 Token；只有 `Bucket.Write:File` 的 Token 仍可上传到根目录或已保存的目标目录，但无法读取目录列表或创建新目录。
 
 ## API boundaries
 

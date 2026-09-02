@@ -71,7 +71,7 @@ form.addEventListener('submit', async (event) => {
   try {
     const client = await createClient(bucket.value, accessToken.value)
     const info = await client.getBucketInfo()
-    await saveSettings({ bucket: bucket.value, accessToken: accessToken.value, bucketLabel: info.name || client.resolved.label, connectedAt: new Date().toISOString() })
+    await saveSettings({ ...initial, bucket: bucket.value, accessToken: accessToken.value, bucketLabel: info.name || client.resolved.label, connectedAt: new Date().toISOString() })
     showStatus(`已连接 · ${info.name || client.resolved.label}`, 'success')
   } catch (error) { showStatus(error.message || '保存失败', 'error') }
   finally { setBusy(false) }

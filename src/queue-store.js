@@ -32,6 +32,8 @@ export async function saveQueue(items) {
         detail: item.detail,
         url: item.url || '',
         title: item.title || '',
+        parent: Number.isSafeInteger(item.parent) && item.parent >= 0 ? item.parent : 0,
+        folderPath: Array.isArray(item.folderPath) && item.folderPath.length ? item.folderPath.slice(0, 64) : ['根目录'],
         status: item.status === 'done' || item.status === 'error' ? item.status : 'ready',
         error: item.error || '',
         result: item.result || null,

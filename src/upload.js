@@ -7,7 +7,7 @@ export const LIMITS = Object.freeze({
 
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'])
 
-export async function uploadFile({ client, file, signal, onProgress }) {
+export async function uploadFile({ client, file, signal, onProgress, parent = 0 }) {
   const contentType = mediaType(file)
   const family = contentType.startsWith('image/') ? 'image' : contentType === 'video/mp4' ? 'video' : ''
   if (!family && contentType !== 'text/plain') throw new Error('仅支持 JPEG、PNG、WebP、AVIF、GIF、MP4 或链接文件')
@@ -16,11 +16,11 @@ export async function uploadFile({ client, file, signal, onProgress }) {
     if (!family) throw new Error('链接文件超过大小限制')
   }
   const name = safeName(file.name, family === 'video' ? 'video.mp4' : family === 'image' ? 'image.jpg' : 'link.url.txt')
-  const asset = await client.uploadFile(file, { signal, onProgress, contentType, name })
+  const asset = await client.uploadFile(file, { signal, onProgress, contentType, name, parent })
   return { type: family || 'link', asset, contentType, size: file.size }
 }
 
-export async function importRemoteMedia({ client, url, signal, onProgress }) {
+export async function importRemoteMedia({ client, url, signal, onProgress, parent = 0 }) {
   if (!/^https?:\/\//i.test(url)) throw new Error('请输入完整的 http(s) 链接')
   onProgress?.({ phase: 'fetching', percent: 0, message: '正在读取远程媒体…' })
   const response = await fetchRemote(url, signal)
@@ -31,25 +31,25 @@ export async function importRemoteMedia({ client, url, signal, onProgress }) {
     const uploadResponse = await fetchRemote(url, signal)
     if (!uploadResponse.body?.getReader) {
       const blob = await uploadResponse.blob()
-      return uploadFile({ client, file: new File([blob], remoteName(url, type), { type }), signal, onProgress })
+      return uploadFile({ client, file: new File([blob], remoteName(url, type), { type }), signal, onProgress, parent })
     }
     return uploadStream({
       client, reader: uploadResponse.body.getReader(), name: remoteName(url, type),
-      contentType: type, size: checked.size, hash: checked.hash, signal, onProgress
+      contentType: type, size: checked.size, hash: checked.hash, signal, onProgress, parent
     })
   }
   const blob = await response.blob()
   const file = new File([blob], remoteName(url, type), { type })
-  return uploadFile({ client, file, signal, onProgress })
+  return uploadFile({ client, file, signal, onProgress, parent })
 }
 
-export async function saveLink({ client, url, title, signal, onProgress }) {
+export async function saveLink({ client, url, title, signal, onProgress, parent = 0 }) {
   if (!/^https?:\/\//i.test(url)) throw new Error('请输入完整的 http(s) 链接')
   const cleanTitle = String(title || '').trim() || new URL(url).hostname
   const linkFile = new File([
     `Title: ${cleanTitle.slice(0, 300)}\nURL: ${url}\nSaved from: Storica Media Uploader\n`
   ], `${safeName(cleanTitle, 'link')}.url.txt`, { type: 'text/plain' })
-  return uploadFile({ client, file: linkFile, signal, onProgress })
+  return uploadFile({ client, file: linkFile, signal, onProgress, parent })
 }
 
 async function hashResponse(response, maxBytes, signal, onProgress) {
@@ -78,9 +78,9 @@ async function hashResponse(response, maxBytes, signal, onProgress) {
   }
 }
 
-async function uploadStream({ client, reader, name, contentType, size, hash, signal, onProgress }) {
+async function uploadStream({ client, reader, name, contentType, size, hash, signal, onProgress, parent = 0 }) {
   const asset = await client.uploadStream({
-    reader, name: safeName(name, 'video.mp4'), contentType, size, hash, signal, onProgress
+    reader, name: safeName(name, 'video.mp4'), contentType, size, hash, signal, onProgress, parent
   })
   return { type: 'video', asset, contentType, size }
 }
