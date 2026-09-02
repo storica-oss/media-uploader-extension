@@ -44,8 +44,8 @@ app.innerHTML = `
     <section class="drop-card" id="drop-zone">
       <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/gif,video/mp4" multiple hidden>
       <input id="folder-input" type="file" webkitdirectory directory multiple hidden>
-      <div class="drop-icon">＋</div><strong>拖拽文件到这里</strong><span>或 <button id="choose-files" class="text-button">选择文件</button></span>
-      <small>JPEG · PNG · WebP · GIF · MP4</small>
+      <div class="drop-icon">＋</div><strong>拖拽文件或文件夹到这里</strong><span>或 <button id="choose-files" class="text-button">选择文件</button></span>
+      <small>支持保留文件夹层级 · JPEG · PNG · WebP · GIF · MP4</small>
     </section>
     <section class="link-card">
       <div class="section-label"><span class="eyebrow">MEDIA UPLOADER / 02</span><span>REMOTE OR LINK FILE</span></div>
@@ -116,14 +116,7 @@ els.dropZone.addEventListener('dragleave', () => { delete els.dropZone.dataset.d
 els.dropZone.addEventListener('drop', (event) => {
   event.preventDefault()
   delete els.dropZone.dataset.dragging
-  const files = [...event.dataTransfer.files]
-  if (files.length) {
-    addFiles(files)
-    return
-  }
-  const droppedText = event.dataTransfer.getData('text/uri-list') || event.dataTransfer.getData('text/plain')
-  const droppedUrl = droppedText.split(/\r?\n/).map((item) => item.trim()).find((item) => /^https?:\/\//i.test(item))
-  if (droppedUrl) addUrl(droppedUrl)
+  void handleDrop(event.dataTransfer)
 })
 
 document.querySelector('#open-dashboard').hidden = pageMode
@@ -145,7 +138,8 @@ chrome.storage.onChanged.addListener(async (changes, areaName) => {
 
 function addFiles(files, preserveTree = false) {
   const rejected = []
-  for (const file of files) {
+  for (const input of files) {
+    const file = input?.file || input
     const category = fileCategory(file)
     if (!category) {
       rejected.push(`${file.name}（格式不支持）`)
@@ -156,7 +150,7 @@ function addFiles(files, preserveTree = false) {
       continue
     }
     const preview = isImageFile(file) ? URL.createObjectURL(file) : ''
-    const relativePath = preserveTree ? String(file.webkitRelativePath || '') : ''
+    const relativePath = preserveTree ? String(input?.relativePath || file.webkitRelativePath || '') : ''
     const segments = relativePath.split('/').map((segment) => segment.trim()).filter((segment) => segment && segment !== '.' && segment !== '..')
     const folderSegments = segments.slice(0, -1)
     queue.push({
@@ -211,6 +205,58 @@ function handlePaste(event) {
     addUrl(text)
     setStatus('已从剪贴板加入链接')
   }
+}
+
+async function handleDrop(dataTransfer) {
+  let files
+  try {
+    files = await readDroppedFiles(dataTransfer)
+  } catch (error) {
+    return setStatus(`读取拖入文件夹失败：${error.message || String(error)}`)
+  }
+  if (files.length) {
+    addFiles(files, files.some((item) => item.relativePath))
+    return
+  }
+  const droppedText = dataTransfer.getData('text/uri-list') || dataTransfer.getData('text/plain')
+  const droppedUrl = droppedText.split(/\r?\n/).map((item) => item.trim()).find((item) => /^https?:\/\//i.test(item))
+  if (droppedUrl) addUrl(droppedUrl)
+}
+
+async function readDroppedFiles(dataTransfer) {
+  const entries = [...(dataTransfer.items || [])]
+    .filter((item) => item.kind === 'file')
+    .map((item) => item.webkitGetAsEntry?.())
+    .filter(Boolean)
+  if (!entries.some((entry) => entry.isDirectory)) return [...dataTransfer.files]
+  const files = []
+  for (const entry of entries) await collectDroppedEntry(entry, '', files)
+  return files
+}
+
+async function collectDroppedEntry(entry, parentPath, files) {
+  if (entry.isFile) {
+    const file = await new Promise((resolve, reject) => entry.file(resolve, reject))
+    files.push({ file, relativePath: parentPath ? `${parentPath}/${file.name}` : '' })
+    return
+  }
+  if (!entry.isDirectory) return
+  const path = parentPath ? `${parentPath}/${entry.name}` : entry.name
+  const children = await readDroppedDirectory(entry)
+  for (const child of children) await collectDroppedEntry(child, path, files)
+}
+
+function readDroppedDirectory(directory) {
+  return new Promise((resolve, reject) => {
+    const reader = directory.createReader()
+    const entries = []
+    const readBatch = () => reader.readEntries((batch) => {
+      if (!batch.length) return resolve(entries)
+      entries.push(...batch)
+      readBatch()
+    }, reject)
+    readBatch()
+  })
 }
 
 function clearQueue() {
