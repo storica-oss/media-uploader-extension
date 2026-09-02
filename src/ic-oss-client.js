@@ -99,6 +99,8 @@ const idlFactory = ({ IDL }) => {
     parent: IDL.Nat32
   })
   const createFileOutput = IDL.Record({ id: IDL.Nat32, created_at: IDL.Nat64 })
+  const ensureFolderInput = IDL.Record({ request_id: IDL.Vec(IDL.Nat8), name: IDL.Text, parent: IDL.Nat32 })
+  const ensureFolderOutput = IDL.Record({ id: IDL.Nat32, created: IDL.Bool, created_at: IDL.Nat64, revision: IDL.Nat64 })
   const folderInfo = IDL.Record({
     id: IDL.Nat32,
     files: IDL.Vec(IDL.Nat32),
@@ -109,6 +111,15 @@ const idlFactory = ({ IDL }) => {
     created_at: IDL.Nat64,
     revision: IDL.Nat64,
     parent: IDL.Nat32
+  })
+  const syncError = IDL.Variant({
+    Internal: IDL.Text,
+    InvalidInput: IDL.Text,
+    NotFound: IDL.Text,
+    PermissionDenied: IDL.Text,
+    Unauthorized: IDL.Text,
+    LimitExceeded: IDL.Text,
+    Conflict: IDL.Record({ entries: IDL.Vec(IDL.Record({ id: IDL.Nat32, kind: IDL.Variant({ Folder: IDL.Null, File: IDL.Null }) })), message: IDL.Text })
   })
   const updateFileChunkInput = IDL.Record({
     id: IDL.Nat32,
@@ -130,6 +141,7 @@ const idlFactory = ({ IDL }) => {
     get_bucket_info: IDL.Func([IDL.Opt(IDL.Vec(IDL.Nat8))], [result(bucketInfo)], ['query']),
     list_folders: IDL.Func([IDL.Nat32, IDL.Opt(IDL.Nat32), IDL.Opt(IDL.Nat32), IDL.Opt(IDL.Vec(IDL.Nat8))], [result(IDL.Vec(folderInfo))], ['query']),
     create_folder: IDL.Func([IDL.Record({ name: IDL.Text, parent: IDL.Nat32 }), IDL.Opt(IDL.Vec(IDL.Nat8))], [result(createFileOutput)], []),
+    ensure_folder: IDL.Func([ensureFolderInput, IDL.Opt(IDL.Vec(IDL.Nat8))], [result(ensureFolderOutput, syncError)], []),
     create_file: IDL.Func([createFileInput, IDL.Opt(IDL.Vec(IDL.Nat8))], [result(createFileOutput)], []),
     update_file_chunk: IDL.Func([updateFileChunkInput, IDL.Opt(IDL.Vec(IDL.Nat8))], [result(updateFileChunkOutput)], []),
     update_file_info: IDL.Func([updateFileInput, IDL.Opt(IDL.Vec(IDL.Nat8))], [result(updateFileOutput)], [])
@@ -185,6 +197,11 @@ export async function createClient(bucketValue, accessTokenValue) {
     },
     async createFolder(name, parent = 0) {
       return unwrap(await actor.create_folder({ name, parent }, token))
+    },
+    async ensureFolder(name, parent = 0) {
+      const requestId = new Uint8Array(16)
+      crypto.getRandomValues(requestId)
+      return unwrap(await actor.ensure_folder({ request_id: requestId, name, parent }, token))
     },
     async uploadFile(file, { signal, onProgress, contentType = file.type || 'application/octet-stream', name = file.name, parent = 0 } = {}) {
       throwIfAborted(signal)

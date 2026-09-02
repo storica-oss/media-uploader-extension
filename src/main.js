@@ -1,7 +1,7 @@
 import { createClient } from './ic-oss-client.js'
 import { loadQueue, saveQueue } from './queue-store.js'
 import { detectUrlType, formatBytes, importRemoteMedia, LIMITS, saveLink, uploadFile } from './upload.js'
-import { isBound, loadSettings } from './settings.js'
+import { isBound, loadSettings, saveSettings } from './settings.js'
 import './style.css'
 
 const app = document.querySelector('#app')
@@ -33,7 +33,7 @@ app.innerHTML = `
     </section>
     <section class="destination-card">
       <div class="destination-copy"><span class="eyebrow">UPLOAD DESTINATION</span><strong id="destination-label">根目录</strong><small id="destination-path">根目录 · 新加入的素材将上传到这里</small></div>
-      <div class="destination-actions"><button id="choose-destination" class="quiet-button" type="button">选择目录</button><button id="create-destination" class="primary-button" type="button">新建目录</button></div>
+      <div class="destination-actions"><button id="choose-destination" class="quiet-button" type="button">选择目录</button><button id="create-destination" class="primary-button" type="button">新建目录</button><button id="choose-folder" class="quiet-button" type="button">选择文件夹</button></div>
       <div id="folder-picker" class="folder-picker" hidden>
         <div class="folder-picker-header"><button id="folder-picker-back" class="quiet-button" type="button">返回上级</button><strong id="folder-picker-path">根目录</strong><button id="folder-picker-use" class="primary-button" type="button">使用当前目录</button></div>
         <div id="folder-list" class="folder-list"></div>
@@ -43,6 +43,7 @@ app.innerHTML = `
     </section>
     <section class="drop-card" id="drop-zone">
       <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/gif,video/mp4" multiple hidden>
+      <input id="folder-input" type="file" webkitdirectory directory multiple hidden>
       <div class="drop-icon">＋</div><strong>拖拽文件到这里</strong><span>或 <button id="choose-files" class="text-button">选择文件</button></span>
       <small>JPEG · PNG · WebP · GIF · MP4</small>
     </section>
@@ -61,7 +62,7 @@ app.innerHTML = `
 `
 
 const els = {
-  connection: document.querySelector('#connection'), fileInput: document.querySelector('#file-input'), dropZone: document.querySelector('#drop-zone'),
+  connection: document.querySelector('#connection'), fileInput: document.querySelector('#file-input'), folderInput: document.querySelector('#folder-input'), dropZone: document.querySelector('#drop-zone'),
   urlInput: document.querySelector('#url-input'), queue: document.querySelector('#queue'), queueCount: document.querySelector('#queue-count'),
   queueSummary: document.querySelector('#queue-summary'), status: document.querySelector('#status'), start: document.querySelector('#start-upload'), cancel: document.querySelector('#cancel-upload'),
   destinationLabel: document.querySelector('#destination-label'), destinationPath: document.querySelector('#destination-path'), folderPicker: document.querySelector('#folder-picker'), folderPickerBack: document.querySelector('#folder-picker-back'), folderPickerPath: document.querySelector('#folder-picker-path'), folderList: document.querySelector('#folder-list'), folderPickerUse: document.querySelector('#folder-picker-use'), newFolderForm: document.querySelector('#new-folder-form'), newFolderName: document.querySelector('#new-folder-name'), folderPickerStatus: document.querySelector('#folder-picker-status')
@@ -69,9 +70,15 @@ const els = {
 
 document.querySelector('#settings').addEventListener('click', () => chrome.runtime.openOptionsPage())
 document.querySelector('#choose-files').addEventListener('click', () => els.fileInput.click())
+document.querySelector('#choose-folder').addEventListener('click', () => els.folderInput.click())
 els.fileInput.addEventListener('change', () => {
   addFiles([...els.fileInput.files])
   els.fileInput.value = ''
+})
+els.folderInput.addEventListener('change', () => {
+  const files = [...els.folderInput.files]
+  if (files.length) addFiles(files, true)
+  els.folderInput.value = ''
 })
 els.dropZone.addEventListener('click', (event) => {
   if (event.target.closest('button')) return
@@ -136,7 +143,7 @@ chrome.storage.onChanged.addListener(async (changes, areaName) => {
   if (!currentAbort) setStatus(isBound(settings) ? '连接配置已更新' : '连接已解除，请重新绑定')
 })
 
-function addFiles(files) {
+function addFiles(files, preserveTree = false) {
   const rejected = []
   for (const file of files) {
     const category = fileCategory(file)
@@ -149,9 +156,17 @@ function addFiles(files) {
       continue
     }
     const preview = isImageFile(file) ? URL.createObjectURL(file) : ''
-    queue.push({ id: crypto.randomUUID(), kind: 'file', label: file.name, detail: formatBytes(file.size), file, preview, ...itemDestination(), status: 'ready', progress: 0 })
+    const relativePath = preserveTree ? String(file.webkitRelativePath || '') : ''
+    const segments = relativePath.split('/').map((segment) => segment.trim()).filter((segment) => segment && segment !== '.' && segment !== '..')
+    const folderSegments = segments.slice(0, -1)
+    queue.push({
+      id: crypto.randomUUID(), kind: 'file', label: file.name, detail: formatBytes(file.size), file, preview,
+      ...itemDestination(), relativePath, folderSegments, folderBaseParent: destination.id, folderBasePath: [...destination.path],
+      folderPath: [...destination.path, ...folderSegments], status: 'ready', progress: 0
+    })
   }
   if (rejected.length) setStatus(`${rejected.slice(0, 2).join('、')}${rejected.length > 2 ? ` 等 ${rejected.length} 个文件未加入` : '未加入'}`)
+  else if (preserveTree && files.length) setStatus(`已加入文件夹中的 ${files.length} 个文件，将保留目录层级`)
   schedulePersist()
   render()
 }
@@ -329,6 +344,26 @@ function itemDestination() {
   return { parent: destination.id, folderPath: [...destination.path] }
 }
 
+async function resolveItemParent(item, activeClient, folderCache) {
+  const segments = Array.isArray(item.folderSegments) && item.folderSegments.length
+    ? item.folderSegments
+    : String(item.relativePath || '').split('/').map((segment) => segment.trim()).filter(Boolean).slice(0, -1)
+  if (!segments.length) return Number(item.parent) || 0
+  let parent = Number.isSafeInteger(item.folderBaseParent) && item.folderBaseParent >= 0 ? item.folderBaseParent : Number(item.parent) || 0
+  for (const name of segments) {
+    const key = `${parent}/${name}`
+    let folderId = folderCache.get(key)
+    if (folderId === undefined) {
+      const folder = await activeClient.ensureFolder(name, parent)
+      folderId = Number(folder.id)
+      if (!Number.isSafeInteger(folderId) || folderId < 0) throw new Error(`目录创建失败：${name}`)
+      folderCache.set(key, folderId)
+    }
+    parent = folderId
+  }
+  return parent
+}
+
 async function processQueue() {
   if (currentAbort) return
   if (!queue.length || queue.every((item) => item.status === 'done')) return setStatus('队列中没有待上传内容')
@@ -338,21 +373,23 @@ async function processQueue() {
   currentAbort = new AbortController()
   try {
     const activeClient = client ||= await createClient(settings.bucket, settings.accessToken)
+    const folderCache = new Map()
     for (const item of queue) {
       if (item.status === 'done') continue
       item.status = 'uploading'; item.progress = 0; schedulePersist(); render()
       try {
+        const parent = await resolveItemParent(item, activeClient, folderCache)
         let result
-        if (item.kind === 'file') result = await uploadFile({ client: activeClient, file: item.file, parent: item.parent || 0, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
-        else if (item.kind === 'image' || item.kind === 'video') result = await importRemoteMedia({ client: activeClient, url: item.url, parent: item.parent || 0, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        if (item.kind === 'file') result = await uploadFile({ client: activeClient, file: item.file, parent, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        else if (item.kind === 'image' || item.kind === 'video') result = await importRemoteMedia({ client: activeClient, url: item.url, parent, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
         else if (item.kind === 'auto') {
           try {
-            result = await importRemoteMedia({ client: activeClient, url: item.url, parent: item.parent || 0, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+            result = await importRemoteMedia({ client: activeClient, url: item.url, parent, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
           } catch (error) {
             if (!/不是支持的图片或 MP4/.test(error.message || '')) throw error
-            result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, parent: item.parent || 0, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+            result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, parent, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
           }
-        } else result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, parent: item.parent || 0, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        } else result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, parent, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
         item.status = 'done'; item.progress = 100; item.result = result
       } catch (error) {
         if (currentAbort.signal.aborted) {
