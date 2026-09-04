@@ -1,6 +1,6 @@
 import { createClient } from './ic-oss-client.js'
 import { loadQueue, saveQueue } from './queue-store.js'
-import { detectUrlType, formatBytes, importRemoteMedia, LIMITS, saveLink, uploadFile } from './upload.js'
+import { CATEGORY_LABELS, classifyFile, detectUrlType, fileCategory, formatBytes, importRemoteMedia, LIMITS, saveLink, SUPPORTED_FORMAT_SUMMARY, UPLOAD_ACCEPT, uploadFile } from './upload.js'
 import { isBound, loadSettings, saveSettings } from './settings.js'
 import './style.css'
 
@@ -28,7 +28,7 @@ app.innerHTML = `
   </header>
   <main class="shell">
     <section class="hero">
-      <div><span class="eyebrow">MEDIA UPLOADER / 01</span><h1>把素材投递到<br><em>你的链上云。</em></h1><p>图片、MP4 视频和网页链接，直接进入你的 IC OSS。</p></div>
+      <div><span class="eyebrow">MEDIA UPLOADER / 01</span><h1>把素材投递到<br><em>你的链上云。</em></h1><p>图片、视频、音乐、游戏 ROM 和电子书，直接进入你的 IC OSS。</p></div>
       <div class="hero-mark" aria-hidden="true">↗</div>
     </section>
     <section class="destination-card">
@@ -42,15 +42,16 @@ app.innerHTML = `
       </div>
     </section>
     <section class="drop-card" id="drop-zone">
-      <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/gif,video/mp4" multiple hidden>
+      <input id="file-input" type="file" accept="${UPLOAD_ACCEPT}" multiple hidden>
       <input id="folder-input" type="file" webkitdirectory directory multiple hidden>
       <div class="drop-icon">＋</div><strong>拖拽文件或文件夹到这里</strong><span>或 <button id="choose-files" class="text-button">选择文件</button></span>
-      <small>支持保留文件夹层级 · JPEG · PNG · WebP · GIF · MP4</small>
+      <div class="format-pills" aria-label="支持的文件类别"><span>图片</span><span>视频</span><span>音乐</span><span>游戏</span><span>电子书</span></div>
+      <small>支持保留文件夹层级 · ${SUPPORTED_FORMAT_SUMMARY}</small>
     </section>
     <section class="link-card">
       <div class="section-label"><span class="eyebrow">MEDIA UPLOADER / 02</span><span>REMOTE OR LINK FILE</span></div>
-      <div class="link-row"><input id="url-input" type="url" placeholder="粘贴图片、MP4 或网页链接…"><button id="add-current" class="quiet-button" title="加入当前标签页">当前页</button><button id="add-link" class="primary-button">加入队列</button></div>
-      <p class="hint">媒体链接会自动抓取原文件；普通链接会保存为一个 .url.txt 文件。也可以直接粘贴截图。</p>
+      <div class="link-row"><input id="url-input" type="url" placeholder="粘贴媒体、电子书或网页链接…"><button id="add-current" class="quiet-button" title="加入当前标签页">当前页</button><button id="add-link" class="primary-button">加入队列</button></div>
+      <p class="hint">图片、视频、音乐和电子书链接会尝试抓取原文件；普通网页链接会保存为一个 .url.txt 文件。也可以直接粘贴截图。</p>
     </section>
     <section class="queue-section">
       <div class="section-heading"><div><span class="eyebrow">MEDIA UPLOADER / 03</span><h2>上传队列 <span id="queue-count">0</span></h2></div><button id="clear-queue" class="quiet-button">清空</button></div>
@@ -140,11 +141,12 @@ function addFiles(files, preserveTree = false) {
   const rejected = []
   for (const input of files) {
     const file = input?.file || input
-    const category = fileCategory(file)
-    if (!category) {
+    const info = classifyFile(file)
+    if (!info) {
       rejected.push(`${file.name}（格式不支持）`)
       continue
     }
+    const { category } = info
     if (!file.size || file.size > LIMITS[category]) {
       rejected.push(`${file.name}（超过 ${formatBytes(LIMITS[category])}）`)
       continue
@@ -154,7 +156,7 @@ function addFiles(files, preserveTree = false) {
     const segments = relativePath.split('/').map((segment) => segment.trim()).filter((segment) => segment && segment !== '.' && segment !== '..')
     const folderSegments = segments.slice(0, -1)
     queue.push({
-      id: crypto.randomUUID(), kind: 'file', label: file.name, detail: formatBytes(file.size), file, preview,
+      id: crypto.randomUUID(), kind: 'file', category, formatLabel: info.label, contentType: info.contentType, label: file.name, detail: `${info.label} · ${formatBytes(file.size)}`, file, preview,
       ...itemDestination(), relativePath, folderSegments, folderBaseParent: destination.id, folderBasePath: [...destination.path],
       folderPath: [...destination.path, ...folderSegments], status: 'ready', progress: 0
     })
@@ -427,12 +429,12 @@ async function processQueue() {
         const parent = await resolveItemParent(item, activeClient, folderCache)
         let result
         if (item.kind === 'file') result = await uploadFile({ client: activeClient, file: item.file, parent, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
-        else if (item.kind === 'image' || item.kind === 'video') result = await importRemoteMedia({ client: activeClient, url: item.url, parent, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
+        else if (['image', 'video', 'audio', 'game', 'ebook'].includes(item.kind)) result = await importRemoteMedia({ client: activeClient, url: item.url, parent, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
         else if (item.kind === 'auto') {
           try {
             result = await importRemoteMedia({ client: activeClient, url: item.url, parent, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
           } catch (error) {
-            if (!/不是支持的图片或 MP4/.test(error.message || '')) throw error
+            if (!/不是支持的媒体或电子书文件/.test(error.message || '')) throw error
             result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, parent, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
           }
         } else result = await saveLink({ client: activeClient, url: item.url, title: item.title || item.label, parent, signal: currentAbort.signal, onProgress: (p) => updateProgress(item, p) })
@@ -444,7 +446,7 @@ async function processQueue() {
           render()
           break
         }
-        item.status = 'error'; item.error = error.message || String(error)
+        item.status = 'error'; item.error = explainUploadError(error, item)
       }
       schedulePersist()
       render()
@@ -485,31 +487,32 @@ function render() {
 }
 
 function renderItem(item) {
-  const icon = item.kind === 'video' ? '▶' : item.kind === 'image' || item.kind === 'file' ? '▧' : '↗'
+  const category = item.category || (item.kind === 'file' ? fileCategory(item.file) : item.kind)
+  const icon = category === 'video' ? '▶' : category === 'audio' ? '♫' : category === 'game' ? '⌘' : category === 'ebook' ? '▤' : category === 'image' ? '▧' : '↗'
   const resultId = item.result?.asset?.id ? `File #${item.result.asset.id}` : ''
   const targetPath = Array.isArray(item.folderPath) && item.folderPath.length ? ` · ${item.folderPath.join(' / ')}` : ''
   const status = item.status === 'done' ? `已完成${resultId ? ` · ${resultId}` : ''}${targetPath}` : item.status === 'error' ? `${item.error}${targetPath}` : item.status === 'uploading' ? `${item.phase || '上传中'} ${item.progress}% · ${item.folderPath?.at(-1) || '根目录'}` : `${item.detail}${targetPath}`
-  const visual = item.preview ? `<img class="item-preview" src="${escapeHtml(item.preview)}" alt="">` : `<div class="item-icon item-${item.kind}">${icon}</div>`
+  const visual = item.preview ? `<img class="item-preview" src="${escapeHtml(item.preview)}" alt="">` : `<div class="item-icon item-${category}">${icon}</div>`
   const retryButton = item.status === 'error' ? `<button class="retry-button" data-retry="${item.id}">重试</button>` : ''
   return `<article class="queue-item" data-state="${item.status}">${visual}<div class="item-copy"><strong title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</strong><small title="${escapeHtml(status)}">${escapeHtml(status)}</small>${item.status === 'uploading' ? `<div class="progress"><i style="width:${item.progress}%"></i></div>` : ''}</div>${retryButton}<button class="remove-button" data-remove="${item.id}" aria-label="移除">×</button></article>`
 }
 
 function setStatus(message) { els.status.textContent = message }
+function explainUploadError(error, item) {
+  const message = error?.message || String(error)
+  if (!/permission denied/i.test(message)) return message
+  const target = Number(item?.parent) === 0 ? '根目录' : '当前目录'
+  const policy = Number(item?.parent) === 0 ? 'Bucket.Write:File File.Write' : 'Bucket.Write:File File.Write（或目标目录及其父级的 Folder.Write.File:<目录ID>）'
+  return `权限不足：${target}不可写。请重新生成包含 ${policy} 的 IC OSS access token，然后点击“重试”。`
+}
 function escapeHtml(value) { return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]) }
 function isImageFile(file) { return fileCategory(file) === 'image' }
-function fileCategory(file) {
-  const type = String(file.type || '').split(';')[0].trim().toLowerCase()
-  if (['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'].includes(type)) return 'image'
-  if (type === 'video/mp4') return 'video'
-  const name = String(file.name || '')
-  if (/\.(?:jpe?g|png|webp|avif|gif)$/i.test(name)) return 'image'
-  if (/\.mp4$/i.test(name)) return 'video'
-  return ''
-}
 async function restoreQueue() {
   const saved = await loadQueue()
   return saved.map((item) => ({
     ...item,
+    category: item.category || (item.kind === 'file' ? fileCategory(item.file) : item.kind),
+    formatLabel: item.formatLabel || CATEGORY_LABELS[item.category || item.kind] || '',
     preview: item.file && isImageFile(item.file) ? URL.createObjectURL(item.file) : ''
   }))
 }

@@ -28,6 +28,9 @@ export async function saveQueue(items) {
       store.put({
         id: item.id,
         kind: item.kind,
+        category: item.category || '',
+        formatLabel: item.formatLabel || '',
+        contentType: item.contentType || '',
         label: item.label,
         detail: item.detail,
         url: item.url || '',

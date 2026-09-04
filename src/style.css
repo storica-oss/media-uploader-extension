@@ -63,7 +63,9 @@ h1 em { color: var(--lime); font-style: normal; }
 .drop-icon { display: grid; width: 42px; height: 42px; place-items: center; margin-bottom: 3px; border: 1px solid rgba(201,255,61,.38); color: var(--lime); font-size: 24px; }
 .drop-card strong { font-size: 15px; }
 .drop-card span { color: var(--muted); font-size: 11px; }
-.drop-card small { margin-top: 7px; color: var(--subtle); font: 700 8px ui-monospace, monospace; letter-spacing: .08em; }
+.format-pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; margin-top: 3px; }
+.format-pills span { padding: 4px 7px; border: 1px solid rgba(201,255,61,.18); color: var(--lime); background: rgba(201,255,61,.06); font: 800 8px ui-monospace, monospace; letter-spacing: .05em; }
+.drop-card small { max-width: 92%; margin-top: 7px; color: var(--subtle); font: 700 8px/1.6 ui-monospace, monospace; letter-spacing: .04em; text-align: center; }
 .text-button { padding: 0; border: 0; background: none; color: var(--lime); font-size: 11px; }
 .link-card, .queue-section { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
 .section-label, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -91,6 +93,9 @@ h2 span { color: var(--muted); font-size: 12px; font-weight: 500; }
 .item-icon, .item-preview { display: grid; width: 31px; height: 31px; place-items: center; flex: none; color: var(--lime); background: rgba(201,255,61,.1); font-size: 15px; }
 .item-preview { display: block; object-fit: cover; }
 .item-video { color: var(--cyan); background: rgba(100,244,255,.1); }
+.item-audio { color: #ffcc70; background: rgba(255,204,112,.11); }
+.item-game { color: #ff8ac6; background: rgba(255,138,198,.11); }
+.item-ebook { color: #a8a0ff; background: rgba(168,160,255,.12); }
 .item-link { color: #b5a2ff; background: rgba(138,115,255,.13); }
 .item-copy { min-width: 0; flex: 1; }
 .item-copy strong, .item-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

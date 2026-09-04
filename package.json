@@ -1,10 +1,11 @@
 {
   "name": "@storica/media-uploader-extension",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "check": "vite build --mode check"
+    "check": "vite build --mode check",
+    "test": "node --test"
   },
   "dependencies": {
     "@dfinity/agent": "^3.4.0",
